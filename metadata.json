@@ -1,0 +1,6 @@
+{
+  "name": "Velora",
+  "description": "A premium modern glassmorphic Web3 waitlist, task, and referral ecosystem with Telegram bot integration, admin dashboard, and user analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
