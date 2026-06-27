@@ -1,0 +1,55 @@
+# =========================================================
+# Stage 1: Build Phase
+# =========================================================
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm ci
+
+# Copy codebase
+COPY . .
+
+# Build the application (Vite assets + server.cjs bundle)
+ENV NODE_ENV=production
+RUN npm run build
+
+# =========================================================
+# Stage 2: Production Execution Phase
+# =========================================================
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Ensure correct Node Environment
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Install production dependencies only
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# Copy compiled backend server from builder phase
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
+
+# Ensure files are owned by the node non-root user
+RUN chown -R node:node /app
+
+# Expose backend port
+EXPOSE 3000
+
+# Switch to standard non-root node user
+USER node
+
+# Backend Health Check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+
+# Start the bundled server
+CMD ["node", "dist/server.cjs"]

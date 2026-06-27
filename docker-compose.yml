@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  # =========================================================
+  # Edge Reverse Proxy (Nginx)
+  # =========================================================
+  nginx:
+    image: nginxinc/nginx-unprivileged:alpine
+    container_name: velora_nginx
+    restart: always
+    ports:
+      - "80:8080" # Maps local port 80 to Nginx container port 8080
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - velora_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # =========================================================
+  # Frontend Static Server
+  # =========================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: velora_frontend
+    restart: always
+    expose:
+      - "8080"
+    networks:
+      - velora_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # =========================================================
+  # Backend API Server (Node/Express)
+  # =========================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: velora_backend
+    restart: always
+    expose:
+      - "3000"
+    ports:
+      - "3000:3000" # Exposes backend for direct debugging / API checks if needed
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - SQL_HOST=postgres
+      - SQL_DB_NAME=${SQL_DB_NAME:-velora_db}
+      - SQL_USER=${SQL_USER:-velora_user}
+      - SQL_PASSWORD=${SQL_PASSWORD:-super_secure_password_here}
+      - SQL_ADMIN_USER=${SQL_ADMIN_USER:-velora_admin}
+      - SQL_ADMIN_PASSWORD=${SQL_ADMIN_PASSWORD:-super_secure_admin_password_here}
+      - DATABASE_URL=postgresql://${SQL_USER:-velora_user}:${SQL_PASSWORD:-super_secure_password_here}@postgres:5432/${SQL_DB_NAME:-velora_db}
+      - JWT_SECRET=${JWT_SECRET:-super_secure_token_secret_hash_value_here}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-super_secure_refresh_token_secret_hash_value_here}
+      - SESSION_SECRET=${SESSION_SECRET:-super_secure_session_secret_hash_value_here}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - TURNSTILE_SECRET=${TURNSTILE_SECRET}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHANNEL_ID=${TELEGRAM_CHANNEL_ID}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - velora_network
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # =========================================================
+  # Database Layer (PostgreSQL)
+  # =========================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: velora_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${SQL_DB_NAME:-velora_db}
+      POSTGRES_USER: ${SQL_ADMIN_USER:-velora_admin}
+      POSTGRES_PASSWORD: ${SQL_ADMIN_PASSWORD:-super_secure_admin_password_here}
+    ports:
+      - "127.0.0.1:5432:5432" # Securely maps DB port locally only (not exposed externally)
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - velora_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SQL_ADMIN_USER:-velora_admin} -d ${SQL_DB_NAME:-velora_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================
+  # Cache & Session Store (Redis)
+  # =========================================================
+  redis:
+    image: redis:7-alpine
+    container_name: velora_redis
+    restart: always
+    ports:
+      - "127.0.0.1:6379:6379" # Securely maps Redis port locally only (not exposed externally)
+    volumes:
+      - redis_data:/data
+    networks:
+      - velora_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+# =========================================================
+# Volumes & Networks Configuration
+# =========================================================
+volumes:
+  pg_data:
+    name: velora_pg_data
+  redis_data:
+    name: velora_redis_data
+
+networks:
+  velora_network:
+    name: velora_production_net
+    driver: bridge

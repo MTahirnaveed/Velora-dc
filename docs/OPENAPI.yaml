@@ -1,0 +1,884 @@
+openapi: 3.1.0
+info:
+  title: Velora Waitlist & Cognitive Platform API
+  description: Production-grade REST API specifications for Velora, a smart waitlist, referrals, gamified task tracking, and administrative control ecosystem.
+  version: 1.0.0
+servers:
+  - url: https://ais-pre-i7zfxg55onnk4lv3j3rt22-851597643510.asia-southeast1.run.app/api
+    description: Production Sandbox Server
+  - url: http://localhost:3000/api
+    description: Local Dev Server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /settings:
+    get:
+      summary: Retrieve Public Settings
+      description: Returns public configuration details, links, launch timelines, and active multipliers.
+      security: []
+      responses:
+        '200':
+          description: Public Settings Object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+
+  /auth/register:
+    post:
+      summary: Waitlist Registration
+      description: Registers a new Pioneer account. Distributes rewards to referrer chains if appropriate.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - username
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                username:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+                referralCode:
+                  type: string
+      responses:
+        '201':
+          description: Registration Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  token:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/400Error'
+
+  /auth/login:
+    post:
+      summary: User Authentication Login
+      description: Authenticates user credentials. May return MFA challenge or mandatory password reset redirect flags.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - identity
+                - password
+              properties:
+                identity:
+                  type: string
+                  description: Username or Email address
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Auth completed, redirects, or session tokens returned
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LoginSuccess'
+                  - $ref: '#/components/schemas/LoginPasswordChangeRequired'
+                  - $ref: '#/components/schemas/LoginMfaRequired'
+        '401':
+          $ref: '#/components/responses/401Error'
+
+  /auth/login-2fa:
+    post:
+      summary: MFA Login Step
+      description: Validates authenticator TOTP token to complete login.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tempToken
+                - code
+              properties:
+                tempToken:
+                  type: string
+                code:
+                  type: string
+                  pattern: '^[0-9]{6}$'
+      responses:
+        '200':
+          description: Complete session login token bundle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginSuccess'
+        '400':
+          $ref: '#/components/responses/400Error'
+        '401':
+          $ref: '#/components/responses/401Error'
+
+  /auth/verify-email:
+    post:
+      summary: Email Verification Code Confirm
+      description: Confirms the 6-digit email confirmation token. Earns points reward.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+              properties:
+                code:
+                  type: string
+      responses:
+        '200':
+          description: Verification complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  pointsAdded:
+                    type: number
+                  verified:
+                    type: boolean
+
+  /auth/reset-password-request:
+    post:
+      summary: Request Password Reset Token
+      description: Dispatches password reset code emails.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Password reset request accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  code:
+                    type: string
+
+  /auth/reset-password-confirm:
+    post:
+      summary: Confirm Password Reset
+      description: Updates password using verified reset code.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - code
+                - newPassword
+              properties:
+                email:
+                  type: string
+                  format: email
+                code:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Reset confirmation complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /admin/force-password-change:
+    post:
+      summary: Force Password Change
+      description: Changes initial credentials for admin users.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - newPassword
+              properties:
+                token:
+                  type: string
+                newPassword:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Credentials updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /auth/me:
+    get:
+      summary: Fetch Current Profile (Self)
+      description: Retrieves complete authenticated profile.
+      responses:
+        '200':
+          description: Self Profile Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /user/avatar:
+    post:
+      summary: Change Avatar Choice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - avatar
+              properties:
+                avatar:
+                  type: string
+      responses:
+        '200':
+          description: Avatar set success
+
+  /user/profile/settings:
+    put:
+      summary: Change Profile Information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                emailMarketing:
+                  type: boolean
+                emailAnnouncements:
+                  type: boolean
+                emailReferrals:
+                  type: boolean
+                soundEffects:
+                  type: boolean
+      responses:
+        '200':
+          description: Profile settings saved
+
+  /user/wallet/link:
+    post:
+      summary: Link Decentralized Wallet
+      description: Associates EVM/Phantom wallet with account for VLR token distribution.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - walletAddress
+                - walletType
+              properties:
+                walletAddress:
+                  type: string
+                walletType:
+                  type: string
+      responses:
+        '200':
+          description: Wallet linked, returns points reward info
+
+  /user/2fa/generate:
+    post:
+      summary: Generate 2FA Secret
+      responses:
+        '200':
+          description: 2FA TOTP secret generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  secret:
+                    type: string
+                  qrCodeUrl:
+                    type: string
+                  otpauthUrl:
+                    type: string
+
+  /user/2fa/verify:
+    post:
+      summary: Verify & Enable 2FA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+              properties:
+                code:
+                  type: string
+      responses:
+        '200':
+          description: Enabled status active
+
+  /user/2fa/disable:
+    post:
+      summary: Disable 2FA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - password
+              properties:
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Disabled success
+
+  /user/kyc/start:
+    post:
+      summary: Initiate KYC documents upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fullName
+                - documentType
+                - documentNumber
+              properties:
+                fullName:
+                  type: string
+                documentType:
+                  type: string
+                documentNumber:
+                  type: string
+      responses:
+        '200':
+          description: KYC request successfully logged as pending
+
+  /user/checkin:
+    post:
+      summary: Complete Daily Check-In
+      responses:
+        '200':
+          description: Check-in completed successfully
+
+  /user/rewards/claim:
+    post:
+      summary: Claim Waitlist VLR Tokens
+      description: Dispatches VLR tokens to Web3 wallet address. Requires KYC verified state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+              properties:
+                amount:
+                  type: number
+      responses:
+        '200':
+          description: Points claimed and Web3 block txn dispatched
+
+  /tasks:
+    get:
+      summary: Fetch Gamified Tasks List
+      responses:
+        '200':
+          description: Array of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+
+  /tasks/{id}/claim:
+    post:
+      summary: Complete and claim waitlist task reward
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Points rewarded successfully
+
+  /notifications:
+    get:
+      summary: Fetch Notifications Feed
+      responses:
+        '200':
+          description: Feed of notification objects
+
+  /notifications/read-all:
+    post:
+      summary: Mark All Notifications Read
+      responses:
+        '200':
+          description: Done
+
+  /notifications/{id}/read:
+    post:
+      summary: Mark Notification Read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Done
+
+  /telegram/feed:
+    get:
+      summary: Get Telegram Live Feed
+      security: []
+      responses:
+        '200':
+          description: Telegram live stream
+
+  /telegram/webhook:
+    post:
+      summary: Bot API Webhook Simulation
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook response received
+
+  /telegram/simulate-join:
+    post:
+      summary: Confirm Join verification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - telegramUsername
+                - channelType
+              properties:
+                telegramUsername:
+                  type: string
+                channelType:
+                  type: string
+      responses:
+        '200':
+          description: Points credited
+
+  /gemini/generate:
+    post:
+      summary: Server-Side Gemini AI proxying gateway
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prompt
+              properties:
+                prompt:
+                  type: string
+                systemInstruction:
+                  type: string
+                temperature:
+                  type: number
+                model:
+                  type: string
+                responseMimeType:
+                  type: string
+                responseSchema:
+                  type: object
+      responses:
+        '200':
+          description: Generated text response from model
+
+  /admin/settings:
+    put:
+      summary: Update System Configuration (Admin Only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Settings updated successfully
+
+  /admin/tasks:
+    post:
+      summary: Create New Gamified Task (Admin Only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Created
+
+  /admin/tasks/{id}:
+    put:
+      summary: Update Existing Task (Admin Only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Updated
+    delete:
+      summary: Remove Task from Database (Admin Only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Deleted
+
+  /admin/broadcast:
+    post:
+      summary: Broadcast Push Message (Admin Only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Dispatch count returned
+
+  /admin/analytics:
+    get:
+      summary: Get Analytics Dashboard Stats (Admin Only)
+      responses:
+        '200':
+          description: Big analytics metrics bundle
+
+  /admin/sent-emails:
+    get:
+      summary: Retrieve Resend Mail Logs (Admin Only)
+      responses:
+        '200':
+          description: Sent log arrays
+
+  /admin/email-campaign:
+    post:
+      summary: Dispatch Newsletter dispatcher (Admin Only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Newsletter dispatched
+
+  /admin/kyc/approve/{userId}:
+    post:
+      summary: Approve User KYC Document (Admin Only)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Verified
+
+  /admin/kyc/reject/{userId}:
+    post:
+      summary: Reject User KYC Document (Admin Only)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Reset to not_started
+
+  /admin/users/ban/{userId}:
+    post:
+      summary: Suspend User Profile (Admin Only)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Account soft deleted/suspended
+
+  /admin/users/unban/{userId}:
+    post:
+      summary: Restore User Profile (Admin Only)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Account restored
+
+  /admin/export/users:
+    get:
+      summary: Export All Users CSV (Admin Only)
+      responses:
+        '200':
+          description: CSV attachment download
+
+  /admin/export/referrals:
+    get:
+      summary: Export Multi-level Referrals Network CSV (Admin Only)
+      responses:
+        '200':
+          description: CSV attachment download
+
+  /admin/export/waitlist:
+    get:
+      summary: Export Waitlist Leaderboard Rankings CSV (Admin Only)
+      responses:
+        '200':
+          description: CSV attachment download
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    400Error:
+      description: Bad Request / Invalid Parameter Input
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+    401Error:
+      description: Unauthorized / Token invalid or expired
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+
+  schemas:
+    Settings:
+      type: object
+      properties:
+        id:
+          type: integer
+        appName:
+          type: string
+        telegramChannelLink:
+          type: string
+        telegramGroupLink:
+          type: string
+        telegramBotUsername:
+          type: string
+        pointMultiplier:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        username:
+          type: string
+        points:
+          type: integer
+        referralsCount:
+          type: integer
+        referredBy:
+          type: string
+          nullable: true
+        referralCode:
+          type: string
+        verified:
+          type: boolean
+        dailyStreak:
+          type: integer
+        avatar:
+          type: string
+        role:
+          type: string
+        badges:
+          type: array
+          items:
+            type: string
+        walletAddress:
+          type: string
+          nullable: true
+        walletType:
+          type: string
+          nullable: true
+        kycStatus:
+          type: string
+        twoFactorEnabled:
+          type: boolean
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        points:
+          type: integer
+        type:
+          type: string
+        link:
+          type: string
+        completed:
+          type: boolean
+
+    LoginSuccess:
+      type: object
+      properties:
+        message:
+          type: string
+        token:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+    LoginPasswordChangeRequired:
+      type: object
+      properties:
+        success:
+          type: boolean
+        needsPasswordChange:
+          type: boolean
+        token:
+          type: string
+        message:
+          type: string
+
+    LoginMfaRequired:
+      type: object
+      properties:
+        success:
+          type: boolean
+        requires2fa:
+          type: boolean
+        tempToken:
+          type: string
+        message:
+          type: string

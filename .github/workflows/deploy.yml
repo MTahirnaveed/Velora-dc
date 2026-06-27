@@ -1,0 +1,228 @@
+name: Velora CI/CD Production Deployment Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  FRONTEND_IMAGE_NAME: ${{ github.repository }}-frontend
+  BACKEND_IMAGE_NAME: ${{ github.repository }}-backend
+  NGINX_IMAGE_NAME: ${{ github.repository }}-nginx
+
+jobs:
+  # =========================================================
+  # Job 1: Build, Lint, and Test (CI)
+  # =========================================================
+  ci:
+    name: Continuous Integration (Lint & Test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Project Dependencies
+        run: npm ci
+
+      - name: Execute Linter Checks
+        run: npm run lint
+
+      - name: Execute Unit & Integration Tests
+        run: |
+          # Check if custom run-tests.ts is present and run it
+          if [ -f "run-tests.ts" ]; then
+            npx tsx run-tests.ts
+          else
+            echo "No test suite file found. Skipping tests."
+          fi
+
+      - name: Compile and Bundle Code
+        run: npm run build
+
+  # =========================================================
+  # Job 2: Build and Push Docker Containers (CD)
+  # =========================================================
+  build-and-push-docker:
+    name: Build & Push Production Docker Images
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker (Frontend)
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Extract metadata for Docker (Backend)
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Extract metadata for Docker (Nginx)
+        id: meta-nginx
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Build and Push Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.frontend
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and Push Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.backend
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and Push Nginx Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: nginx.conf
+          push: false # Build test for configuration
+          tags: ${{ steps.meta-nginx.outputs.tags }}
+          labels: ${{ steps.meta-nginx.outputs.labels }}
+
+  # =========================================================
+  # Job 3: Continuous Deployment & Rollback (CD)
+  # =========================================================
+  deploy:
+    name: Deploy to Production & Health Check
+    needs: build-and-push-docker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure SSH Connection for Deployment
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ secrets.PROD_SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Execute Server Deployment Script
+        id: deploy-step
+        run: |
+          ssh ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} << 'EOF'
+            set -e
+            cd /opt/velora
+            
+            # Save current running commit for rollbacks
+            OLD_TAG=$(docker-compose images -q backend | xargs docker inspect --format='{{.Config.Image}}' | cut -d: -f2 || echo "latest")
+            echo "OLD_TAG=$OLD_TAG" > /tmp/velora_deploy_env
+            
+            # Log in to registry
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Pull latest containers
+            docker-compose pull
+            
+            # Launch the production service suite
+            docker-compose up -d --remove-orphans
+            
+            # Run Drizzle database migrations
+            docker-compose exec -T backend sh ./scripts/db-migrate.sh
+            
+            echo "Deployment triggered successfully. Initiating health check loop..."
+          EOF
+
+      - name: Execute Post-Deployment Health Check & Validate
+        id: health-check
+        run: |
+          ssh ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} << 'EOF'
+            set -e
+            cd /opt/velora
+            
+            # Wait loop to ensure containers are initialized
+            max_attempts=12
+            attempt=1
+            healthy=0
+            
+            while [ $attempt -le $max_attempts ]; do
+              echo "Health check attempt $attempt/$max_attempts..."
+              # Invoke our built-in health script inside the docker stack
+              if docker-compose exec -T backend sh ./scripts/db-health.sh; then
+                echo "All services passed connection and engine validations!"
+                healthy=1
+                break
+              fi
+              sleep 10
+              attempt=$((attempt + 1))
+            done
+            
+            if [ $healthy -eq 0 ]; then
+              echo "Error: Post-deployment health verification failed. Deploy degraded!"
+              exit 1
+            fi
+          EOF
+
+      - name: Automated Rollback on Failure
+        if: failure() && steps.deploy-step.outcome == 'success'
+        run: |
+          echo "Deployment failed health checks. Rolling back to previous stable image..."
+          ssh ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} << 'EOF'
+            cd /opt/velora
+            # Source old tag
+            if [ -f /tmp/velora_deploy_env ]; then
+              source /tmp/velora_deploy_env
+              echo "Reverting container tags to: $OLD_TAG"
+              
+              # Re-pull older stable image tags and restart stack
+              sed -i "s|image: ghcr.io/.*-backend:.*|image: ghcr.io/${{ env.BACKEND_IMAGE_NAME }}:$OLD_TAG|g" docker-compose.yml
+              docker-compose up -d
+              
+              echo "Rollback successfully completed."
+            else
+              echo "Could not find backup environment. Manual rollback required."
+            fi
+          EOF
