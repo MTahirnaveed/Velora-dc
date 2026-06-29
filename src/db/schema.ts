@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, doublePrecision, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, integer, boolean, timestamp, doublePrecision, jsonb, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // 1. Users Table
@@ -40,7 +40,12 @@ export const users = pgTable('users', {
   deletedAt: timestamp('deleted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (table) => [
+  index('users_points_idx').on(table.points),
+  index('users_email_idx').on(table.email),
+  index('users_username_idx').on(table.username),
+  index('users_referral_code_idx').on(table.referralCode),
+]);
 
 // 2. Profiles Table (1-to-1 with Users)
 export const profiles = pgTable('profiles', {
@@ -59,7 +64,10 @@ export const referrals = pgTable('referrals', {
   pointsAwarded: integer('points_awarded').default(0).notNull(),
   level: integer('level').default(1).notNull(), // 1, 2, or 3
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => [
+  index('referrals_referrer_idx').on(table.referrerId),
+  index('referrals_referee_idx').on(table.refereeId),
+]);
 
 // 4. Referral Rewards Table
 export const referralRewards = pgTable('referral_rewards', {
@@ -69,7 +77,9 @@ export const referralRewards = pgTable('referral_rewards', {
   level: integer('level').notNull(), // 1, 2, or 3
   points: integer('points').notNull(),
   timestamp: timestamp('timestamp').defaultNow().notNull(),
-});
+}, (table) => [
+  index('referral_rewards_user_idx').on(table.userId),
+]);
 
 // 5. Tasks Table
 export const tasks = pgTable('tasks', {
@@ -91,7 +101,10 @@ export const userTasks = pgTable('user_tasks', {
   userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   taskId: integer('task_id').references(() => tasks.id, { onDelete: 'cascade' }).notNull(),
   claimedAt: timestamp('claimed_at').defaultNow().notNull(),
-});
+}, (table) => [
+  index('user_tasks_user_idx').on(table.userId),
+  index('user_tasks_task_idx').on(table.taskId),
+]);
 
 // 7. Notifications Table
 export const notifications = pgTable('notifications', {
@@ -102,7 +115,9 @@ export const notifications = pgTable('notifications', {
   type: text('type').default('info').notNull(), // 'info' | 'success' | 'alert' | 'announcement'
   isRead: boolean('is_read').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => [
+  index('notifications_user_idx').on(table.userId),
+]);
 
 // 8. System Settings Table
 export const systemSettings = pgTable('system_settings', {
@@ -124,7 +139,9 @@ export const achievements = pgTable('achievements', {
   userId: integer('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   badgeName: text('badge_name').notNull(),
   unlockedAt: timestamp('unlocked_at').defaultNow().notNull(),
-});
+}, (table) => [
+  index('achievements_user_idx').on(table.userId),
+]);
 
 // 10. Audit Logs Table
 export const auditLogs = pgTable('audit_logs', {
@@ -133,7 +150,9 @@ export const auditLogs = pgTable('audit_logs', {
   action: text('action').notNull(),
   details: text('details'),
   timestamp: timestamp('timestamp').defaultNow().notNull(),
-});
+}, (table) => [
+  index('audit_logs_user_idx').on(table.userId),
+]);
 
 // 11. Sessions Table
 export const sessions = pgTable('sessions', {
@@ -142,7 +161,9 @@ export const sessions = pgTable('sessions', {
   refreshToken: text('refresh_token').notNull(),
   expiresAt: timestamp('expires_at').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => [
+  index('sessions_user_idx').on(table.userId),
+]);
 
 // 12. Password Reset Tokens Table
 export const passwordResetTokens = pgTable('password_reset_tokens', {
@@ -170,7 +191,9 @@ export const rewardClaims = pgTable('reward_claims', {
   txnHash: text('txn_hash').notNull().unique(),
   status: text('status').default('pending').notNull(), // 'pending' | 'completed'
   timestamp: timestamp('timestamp').defaultNow().notNull(),
-});
+}, (table) => [
+  index('reward_claims_user_idx').on(table.userId),
+]);
 
 // Relations Definitions
 export const usersRelations = relations(users, ({ one, many }) => ({
