@@ -1,9 +1,37 @@
 import { db } from './index.ts';
-import { tasks, systemSettings } from './schema.ts';
+import { tasks, systemSettings, users, profiles } from './schema.ts';
 import { eq } from 'drizzle-orm';
+import bcrypt from 'bcryptjs';
 
 export async function runDatabaseSeed() {
   try {
+    console.log('[Seed] Checking admin user...');
+    const existingAdmin = await db.select().from(users).where(eq(users.username, 'admin')).limit(1);
+    if (existingAdmin.length === 0) {
+      console.log('[Seed] Admin user not found. Seeding admin...');
+      const passwordHash = bcrypt.hashSync('admin123', 10);
+      const inserted = await db.insert(users).values({
+        uid: 'admin_uid_seed',
+        email: 'admin@velora.io',
+        username: 'admin',
+        passwordHash,
+        role: 'admin',
+        verified: true,
+        referralCode: 'VEL_ADMIN',
+        points: 1000,
+      }).returning();
+      
+      const adminId = inserted[0].id;
+      await db.insert(profiles).values({
+        userId: adminId,
+        bio: 'Velora System Administrator',
+        fullName: 'Admin',
+      });
+      console.log('[Seed] Admin user seeded successfully.');
+    } else {
+      console.log('[Seed] Admin user already exists.');
+    }
+
     console.log('[Seed] Checking system settings table...');
     const existingSettings = await db.select().from(systemSettings).limit(1);
     if (existingSettings.length === 0) {
