@@ -6,18 +6,33 @@ import bcrypt from 'bcryptjs';
 export async function runDatabaseSeed() {
   try {
     console.log('[Seed] Checking admin user...');
-    const existingAdmin = await db.select().from(users).where(eq(users.username, 'admin')).limit(1);
+    const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+    const existingAdmin = await db.select().from(users).where(eq(users.username, adminUsername)).limit(1);
     if (existingAdmin.length === 0) {
       console.log('[Seed] Admin user not found. Seeding admin...');
-      const passwordHash = bcrypt.hashSync('admin123', 10);
+      
+      const adminEmail = process.env.ADMIN_EMAIL || 'admin@velora.io';
+      const adminPassword = process.env.ADMIN_PASSWORD;
+      
+      let passwordToHash = adminPassword;
+      if (!passwordToHash) {
+        // Generate a random secure password so it is not guessable
+        const randomHex = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
+        passwordToHash = `VeloraAdmin_${randomHex}`;
+        console.warn(`[Seed Warning] ADMIN_PASSWORD environment variable not set! Generated random fallback credentials:\nUsername: ${adminUsername}\nPassword: ${passwordToHash}\nPlease secure these credentials immediately in your production environment!`);
+      } else {
+        console.log(`[Seed] Admin credentials populated from environment variables securely.`);
+      }
+
+      const passwordHash = bcrypt.hashSync(passwordToHash, 10);
       const inserted = await db.insert(users).values({
-        uid: 'admin_uid_seed',
-        email: 'admin@velora.io',
-        username: 'admin',
+        uid: `admin_uid_${adminUsername}`,
+        email: adminEmail,
+        username: adminUsername,
         passwordHash,
         role: 'admin',
         verified: true,
-        referralCode: 'VEL_ADMIN',
+        referralCode: `VEL_${adminUsername.toUpperCase()}`,
         points: 1000,
       }).returning();
       

@@ -1790,13 +1790,7 @@ export default function App() {
                 </form>
               )}
 
-              {/* Quick Login credentials helper for testing */}
-              <div className="mt-8 pt-4 border-t border-slate-850 text-left">
-                <span className="block text-[9px] uppercase font-bold text-indigo-400/80 tracking-wider mb-1">Developer test bypass:</span>
-                <p className="text-[10px] text-slate-400 leading-normal">
-                  To login as administrator, use identity <code className="bg-slate-950 px-1 py-0.5 rounded text-rose-300 font-mono">admin</code> and password <code className="bg-slate-950 px-1 py-0.5 rounded text-rose-300 font-mono">admin123</code>.
-                </p>
-              </div>
+
             </div>
           ) : (
             
@@ -1814,7 +1808,9 @@ export default function App() {
                       <h4 className="text-xs font-bold text-amber-300">Contact Email Verification Pending</h4>
                       <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
                         Verify your registration email to earn <span className="font-bold text-amber-400">+150 points</span> and fully unlock referral multiplier links!
-                        Your simulation code is: <code className="bg-slate-950 px-1 py-0.5 rounded font-mono text-amber-300">{user.verificationCode || '123456'}</code>.
+                        {(import.meta as any).env?.DEV && (
+                          <> Your simulation code is: <code className="bg-slate-950 px-1 py-0.5 rounded font-mono text-amber-300">{user.verificationCode || '123456'}</code>.</>
+                        )}
                       </p>
                     </div>
                   </div>

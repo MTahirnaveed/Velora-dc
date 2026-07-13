@@ -236,11 +236,14 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
       await distributeReferralPoints(newUser, referredBy);
     }
 
-    res.status(201).json({
+    const responsePayload: any = {
       success: true,
-      message: 'Registration successful! Verification code sent.',
-      verificationCode // Exposed in development/testing mode for ease
-    });
+      message: 'Registration successful! Verification code sent.'
+    };
+    if (process.env.NODE_ENV !== 'production') {
+      responsePayload.verificationCode = verificationCode;
+    }
+    res.status(201).json(responsePayload);
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
