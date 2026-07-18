@@ -1808,7 +1808,7 @@ export default function App() {
                       <h4 className="text-xs font-bold text-amber-300">Contact Email Verification Pending</h4>
                       <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
                         Verify your registration email to earn <span className="font-bold text-amber-400">+150 points</span> and fully unlock referral multiplier links!
-                        {(import.meta as any).env?.DEV && (
+                        {import.meta.env.DEV && (
                           <> Your simulation code is: <code className="bg-slate-950 px-1 py-0.5 rounded font-mono text-amber-300">{user.verificationCode || '123456'}</code>.</>
                         )}
                       </p>

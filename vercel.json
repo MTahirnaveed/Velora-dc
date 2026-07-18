@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "/api/robots.txt"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap.xml"
+    },
+    {
+      "source": "/((?!assets|favicon.ico|manifest.json).*|[^.]*)",
+      "destination": "/index.html"
+    }
+  ]
+}

@@ -240,7 +240,7 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
       success: true,
       message: 'Registration successful! Verification code sent.'
     };
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
       responsePayload.verificationCode = verificationCode;
     }
     res.status(201).json(responsePayload);
@@ -410,11 +410,16 @@ app.post('/api/auth/reset-password-request', async (req: Request, res: Response)
 
     await queries.createResetToken(email, token, expiresAt);
 
-    res.json({
+    const responsePayload: any = {
       success: true,
-      message: 'Reset password code generated.',
-      token // Exposed for simulated workflows
-    });
+      message: 'Reset password code generated.'
+    };
+
+    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+      responsePayload.token = token;
+    }
+
+    res.json(responsePayload);
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1004,4 +1009,13 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+} else {
+  console.log("Vercel Serverless environment detected. Database seeding will run in background.");
+  runDatabaseSeed().catch(err => {
+    console.error('[Vercel Background Seed Error]', err);
+  });
+}
+
+export default app;

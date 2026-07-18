@@ -14,17 +14,13 @@ export async function runDatabaseSeed() {
       const adminEmail = process.env.ADMIN_EMAIL || 'admin@velora.io';
       const adminPassword = process.env.ADMIN_PASSWORD;
       
-      let passwordToHash = adminPassword;
-      if (!passwordToHash) {
-        // Generate a random secure password so it is not guessable
-        const randomHex = Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10);
-        passwordToHash = `VeloraAdmin_${randomHex}`;
-        console.warn(`[Seed Warning] ADMIN_PASSWORD environment variable not set! Generated random fallback credentials:\nUsername: ${adminUsername}\nPassword: ${passwordToHash}\nPlease secure these credentials immediately in your production environment!`);
-      } else {
-        console.log(`[Seed] Admin credentials populated from environment variables securely.`);
+      if (!adminPassword) {
+        console.warn(`[Seed Warning] ADMIN_PASSWORD environment variable is not set. Skipping admin user seeding to protect production environment security.`);
+        return;
       }
 
-      const passwordHash = bcrypt.hashSync(passwordToHash, 10);
+      console.log(`[Seed] Admin credentials populated from environment variables securely.`);
+      const passwordHash = bcrypt.hashSync(adminPassword, 10);
       const inserted = await db.insert(users).values({
         uid: `admin_uid_${adminUsername}`,
         email: adminEmail,
